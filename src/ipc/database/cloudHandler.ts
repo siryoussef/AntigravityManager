@@ -519,8 +519,8 @@ export class CloudAccountRepo {
           );
         } catch (error) {
           migrationStats.failedFields += 1;
-          logger.error(`Failed to decrypt token for account ${normalizedRow.id}`, error);
-          throw error;
+          logger.error(`[CloudAccountRepo] Skip account ${normalizedRow.id} - Decryption failed for token`, error);
+          continue; // Skip this account instead of crashing the whole load
         }
 
         let quotaResult: DecryptFieldResult;
@@ -533,12 +533,13 @@ export class CloudAccountRepo {
           );
         } catch (error) {
           migrationStats.failedFields += 1;
-          logger.error(`Failed to decrypt quota for account ${normalizedRow.id}`, error);
-          throw error;
+          logger.error(`[CloudAccountRepo] Account ${normalizedRow.id} - Decryption failed for quota, will continue without it`, error);
+          quotaResult = { value: null, migrated: false };
         }
 
         if (!tokenResult.value) {
-          throw new Error(`Missing token data for account ${normalizedRow.id}`);
+          logger.warn(`[CloudAccountRepo] Skip account ${normalizedRow.id} - No token data available after decryption`);
+          continue;
         }
 
         if (tokenResult.value) {
@@ -567,21 +568,26 @@ export class CloudAccountRepo {
           }
         }
 
-        cloudAccounts.push({
-          id: normalizedRow.id,
-          provider: normalizedRow.provider as CloudAccount['provider'],
-          email: normalizedRow.email,
-          name: normalizedRow.name ?? undefined,
-          avatar_url: normalizedRow.avatarUrl ?? undefined,
-          token: JSON.parse(tokenResult.value),
-          quota: quotaResult.value ? JSON.parse(quotaResult.value) : undefined,
-          device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
-          device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
-          created_at: normalizedRow.createdAt,
-          last_used: normalizedRow.lastUsed,
-          status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
-          is_active: Boolean(normalizedRow.isActive),
-        });
+        try {
+          cloudAccounts.push({
+            id: normalizedRow.id,
+            provider: normalizedRow.provider as CloudAccount['provider'],
+            email: normalizedRow.email,
+            name: normalizedRow.name ?? undefined,
+            avatar_url: normalizedRow.avatarUrl ?? undefined,
+            token: JSON.parse(tokenResult.value),
+            quota: quotaResult.value ? JSON.parse(quotaResult.value) : undefined,
+            device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
+            device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
+            created_at: normalizedRow.createdAt,
+            last_used: normalizedRow.lastUsed,
+            status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
+            is_active: Boolean(normalizedRow.isActive),
+          });
+        } catch (parseError) {
+          logger.error(`[CloudAccountRepo] Skip account ${normalizedRow.id} - JSON parse error`, parseError);
+          continue;
+        }
       }
 
       return cloudAccounts;
@@ -618,38 +624,57 @@ export class CloudAccountRepo {
         return undefined;
       }
 
-      const tokenResult = await decryptAndMigrateField(
-        orm,
-        normalizedRow.id,
-        'tokenJson',
-        normalizedRow.tokenJson,
-      );
-      const quotaResult = await decryptAndMigrateField(
-        orm,
-        normalizedRow.id,
-        'quotaJson',
-        normalizedRow.quotaJson,
-      );
-
-      if (!tokenResult.value) {
-        throw new Error(`Missing token data for account ${normalizedRow.id}`);
+      let tokenResult: DecryptFieldResult;
+      try {
+        tokenResult = await decryptAndMigrateField(
+          orm,
+          normalizedRow.id,
+          'tokenJson',
+          normalizedRow.tokenJson,
+        );
+      } catch (error) {
+        logger.error(`[CloudAccountRepo] getAccount ${id} failed - Decryption failed for token`, error);
+        return undefined;
       }
 
-      return {
-        id: normalizedRow.id,
-        provider: normalizedRow.provider as CloudAccount['provider'],
-        email: normalizedRow.email,
-        name: normalizedRow.name ?? undefined,
-        avatar_url: normalizedRow.avatarUrl ?? undefined,
-        token: JSON.parse(tokenResult.value),
-        quota: quotaResult.value ? JSON.parse(quotaResult.value) : undefined,
-        device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
-        device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
-        created_at: normalizedRow.createdAt,
-        last_used: normalizedRow.lastUsed,
-        status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
-        is_active: Boolean(normalizedRow.isActive),
-      };
+      let quotaResult: DecryptFieldResult;
+      try {
+        quotaResult = await decryptAndMigrateField(
+          orm,
+          normalizedRow.id,
+          'quotaJson',
+          normalizedRow.quotaJson,
+        );
+      } catch (error) {
+        logger.error(`[CloudAccountRepo] getAccount ${id} failed - Decryption failed for quota`, error);
+        quotaResult = { value: null, migrated: false };
+      }
+
+      const tokenValue = tokenResult.value;
+      if (!tokenValue) {
+        return undefined;
+      }
+
+      try {
+        return {
+          id: normalizedRow.id,
+          provider: normalizedRow.provider as CloudAccount['provider'],
+          email: normalizedRow.email,
+          name: normalizedRow.name ?? undefined,
+          avatar_url: normalizedRow.avatarUrl ?? undefined,
+          token: JSON.parse(tokenValue),
+          quota: quotaResult.value ? JSON.parse(quotaResult.value) : undefined,
+          device_profile: parseDeviceProfileColumn(normalizedRow.deviceProfileJson),
+          device_history: parseDeviceHistoryColumn(normalizedRow.deviceHistoryJson),
+          created_at: normalizedRow.createdAt,
+          last_used: normalizedRow.lastUsed,
+          status: (normalizedRow.status as CloudAccount['status']) ?? undefined,
+          is_active: Boolean(normalizedRow.isActive),
+        };
+      } catch (e) {
+        logger.error(`[CloudAccountRepo] getAccount ${id} failed - JSON parse error`, e);
+        return undefined;
+      }
     } finally {
       raw.close();
     }
