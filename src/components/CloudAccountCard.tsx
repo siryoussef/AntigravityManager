@@ -324,6 +324,7 @@ export function CloudAccountCard({
     );
 
   const aiCredits = account.quota?.ai_credits;
+  const shouldShowAiCredits = !!aiCredits && Number.isFinite(aiCredits.credits) && aiCredits.credits >= 0;
 
   const formatCreditsExpiry = (expiryDate: string) => {
     if (!expiryDate) return '';
@@ -369,7 +370,7 @@ export function CloudAccountCard({
           </CardTitle>
           <CardDescription className="truncate text-xs">{account.email}</CardDescription>
 
-          {aiCredits && aiCredits.credits > 0 && (
+          {shouldShowAiCredits && aiCredits && (
             <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-amber-500">
               <span>${aiCredits.credits.toFixed(2)}</span>
               {aiCredits.expiryDate && (
@@ -623,6 +624,7 @@ export function CompactCloudAccountCard({
   );
 
   const aiCredits = account.quota?.ai_credits;
+  const shouldShowAiCredits = !!aiCredits && Number.isFinite(aiCredits.credits) && aiCredits.credits >= 0;
 
   const formatCreditsExpiry = (expiryDate: string) => {
     if (!expiryDate) return '';
@@ -672,7 +674,7 @@ export function CompactCloudAccountCard({
         <div className="text-muted-foreground flex items-center gap-3 text-xs">
           <span className="truncate">{account.email}</span>
 
-          {aiCredits && aiCredits.credits > 0 && (
+          {shouldShowAiCredits && aiCredits && (
             <span className="shrink-0 text-amber-500">
               ${aiCredits.credits.toFixed(2)}
               {aiCredits.expiryDate && (

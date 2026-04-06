@@ -280,7 +280,21 @@ export function CloudAccountList() {
     refreshMutation.mutate(
       { accountId: id },
       {
-        onSuccess: () => toast({ title: t('cloud.toast.quotaRefreshed') }),
+        onSuccess: (updatedAccount) => {
+          const credits = updatedAccount.quota?.ai_credits?.credits;
+          if (typeof credits === 'number') {
+            toast({
+              title: t('cloud.toast.quotaRefreshed'),
+              description: `AI credits: $${credits.toFixed(2)}`,
+            });
+            return;
+          }
+
+          toast({
+            title: t('cloud.toast.quotaRefreshed'),
+            description: 'AI credits not available for this refresh.',
+          });
+        },
         onError: () => toast({ title: t('cloud.toast.refreshFailed'), variant: 'destructive' }),
       },
     );

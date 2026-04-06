@@ -120,14 +120,20 @@ export class CloudMonitorService {
 
           await new Promise((r) => setTimeout(r, 1000));
           const quota = await GoogleAPIService.fetchQuota(accessToken, account.proxy_url);
+          const previousAICredits = account.quota?.ai_credits;
 
           try {
             const aiCredits = await GoogleAPIService.fetchAICredits(accessToken, account.proxy_url);
             if (aiCredits) {
               quota.ai_credits = aiCredits;
+            } else if (previousAICredits) {
+              quota.ai_credits = previousAICredits;
             }
           } catch (creditError) {
             logger.warn(`Monitor: Failed to fetch credits for ${account.email}`, creditError);
+            if (previousAICredits) {
+              quota.ai_credits = previousAICredits;
+            }
           }
 
           // 3. Update DB

@@ -86,8 +86,18 @@ export async function addGoogleAccount(authCode: string): Promise<CloudAccount> 
 
     try {
       const quota = await GoogleAPIService.fetchQuota(account.token.access_token);
+      try {
+        const aiCredits = await GoogleAPIService.fetchAICredits(account.token.access_token);
+        if (aiCredits) {
+          quota.ai_credits = aiCredits;
+        } else {
+          logger.info(`No AI credits returned for ${account.email} during initial sync`);
+        }
+      } catch (e) {
+        logger.warn('Failed to fetch initial AI credits', e);
+      }
       account.quota = quota;
-      await CloudAccountRepo.updateQuota(account.id, quota);
+      await CloudAccountRepo.updateQuota(account.id, account.quota);
       notifyTrayUpdate(account);
     } catch (e) {
       logger.warn('Failed to fetch initial quota', e);
@@ -135,9 +145,8 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
   }
 
   try {
+    const previousAICredits = account.quota?.ai_credits;
     const quota = await GoogleAPIService.fetchQuota(account.token.access_token, account.proxy_url);
-    account.quota = quota;
-    await CloudAccountRepo.updateQuota(account.id, quota);
 
     try {
       const aiCredits = await GoogleAPIService.fetchAICredits(
@@ -145,13 +154,22 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
         account.proxy_url,
       );
       if (aiCredits) {
-        account.quota = { ...quota, ai_credits: aiCredits };
-        await CloudAccountRepo.updateQuota(account.id, account.quota);
+        quota.ai_credits = aiCredits;
+      } else {
+        logger.info(`No AI credits returned for ${account.email} during quota refresh`);
+        if (previousAICredits) {
+          quota.ai_credits = previousAICredits;
+        }
       }
     } catch (e) {
       logger.warn('Failed to fetch AI credits', e);
+      if (previousAICredits) {
+        quota.ai_credits = previousAICredits;
+      }
     }
 
+    account.quota = quota;
+    await CloudAccountRepo.updateQuota(account.id, account.quota);
     await CloudAccountRepo.updateLastUsed(account.id);
     account.last_used = Math.floor(Date.now() / 1000);
     notifyTrayUpdate(account);
@@ -172,12 +190,11 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
 
         await CloudAccountRepo.updateToken(account.id, account.token);
 
+        const previousAICredits = account.quota?.ai_credits;
         const quota = await GoogleAPIService.fetchQuota(
           account.token.access_token,
           account.proxy_url,
         );
-        account.quota = quota;
-        await CloudAccountRepo.updateQuota(account.id, quota);
 
         try {
           const aiCredits = await GoogleAPIService.fetchAICredits(
@@ -185,13 +202,22 @@ export async function refreshAccountQuota(accountId: string): Promise<CloudAccou
             account.proxy_url,
           );
           if (aiCredits) {
-            account.quota = { ...quota, ai_credits: aiCredits };
-            await CloudAccountRepo.updateQuota(account.id, account.quota);
+            quota.ai_credits = aiCredits;
+          } else {
+            logger.info(`No AI credits returned for ${account.email} after token refresh`);
+            if (previousAICredits) {
+              quota.ai_credits = previousAICredits;
+            }
           }
         } catch (e) {
           logger.warn('Failed to fetch AI credits after token refresh', e);
+          if (previousAICredits) {
+            quota.ai_credits = previousAICredits;
+          }
         }
 
+        account.quota = quota;
+        await CloudAccountRepo.updateQuota(account.id, account.quota);
         await CloudAccountRepo.updateLastUsed(account.id);
         account.last_used = Math.floor(Date.now() / 1000);
         return account;

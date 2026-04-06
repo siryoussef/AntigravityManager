@@ -425,6 +425,11 @@ app
       if (enabled) {
         logger.info('Startup: Auto-Switch enabled, starting monitor...');
         CloudMonitorService.start();
+      } else {
+        logger.info(
+          'Startup: Auto-Switch disabled, running one-time quota and AI credits sync...',
+        );
+        await CloudMonitorService.poll();
       }
     } catch (e) {
       logger.error('Startup: Failed to initialize services', e);
